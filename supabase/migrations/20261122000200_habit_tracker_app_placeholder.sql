@@ -1,0 +1,3 @@
+-- Placeholder: migration 20261122000200 belongs to habit-tracker-app, which shares this Supabase project.
+-- It is already applied on the remote. This empty file only keeps the Supabase CLI's
+-- migration history in sync so 'db push' applies just the pomodoro_* migrations. Do not edit.

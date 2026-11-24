@@ -30,8 +30,19 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (only the empty template is committed)
+.env
+.env.*
 .env*.local
+!.env.example
+
+# Supabase CLI state
+supabase/.temp/
+supabase/.branches/
+
+# design/screenshot scratch output
+scratchpad/
+shots/
 
 # typescript
 *.tsbuildinfo
