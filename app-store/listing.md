@@ -117,8 +117,8 @@ Suggested order: Focus (growing tree) → Finished celebration → My Forest →
   trademark databases, and consider a more distinctive name if needed.
 - [ ] **Legal review.** `privacy.html` and `terms.html` are good-faith templates, not legal advice. Have
   them reviewed for the countries where you publish (for example GDPR in the EU/UK).
-- [ ] **License.** `LICENSE` still contains the Expo template's MIT notice. Replace it with your own
-  license (or remove it to keep the code all-rights-reserved).
+- [x] **License.** `LICENSE` is the standard MIT License, Copyright (c) 2026 Abdulsamet Duran (replaced
+  the Expo template's notice).
 - [ ] **Hosted URLs.** Deploy the web app and replace `<your-site>` above with the real domain.
 - [ ] **Supabase redirect URLs.** Add `pomodoroapp://**` and the web origin under Authentication → URL
   Configuration so email links open the app.
