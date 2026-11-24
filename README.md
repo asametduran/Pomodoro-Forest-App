@@ -66,7 +66,9 @@ The app shares an existing Supabase project, so every table is prefixed `pomodor
 
 Both have Row Level Security with `auth.uid() = user_id` policies for select, insert (`WITH CHECK`),
 update (`USING` + `WITH CHECK`) and delete; the `anon` role has no access. CHECK constraints validate
-every column server-side. Schema: [`supabase/migrations/20261124000000_pomodoro_schema.sql`](supabase/migrations/20261124000000_pomodoro_schema.sql).
+every column server-side, and the `pomodoro_guard_coins` trigger rejects any profile whose coins plus
+unlocked-species cost exceed the coins its sessions actually earned. Schema:
+[`supabase/migrations`](supabase/migrations) (`*_pomodoro_schema.sql`, `*_pomodoro_guard_coins.sql`).
 
 1. Fill in `.env.local` (see [`.env.example`](.env.example)):
    ```bash
@@ -87,6 +89,51 @@ every column server-side. Schema: [`supabase/migrations/20261124000000_pomodoro_
 
 Session tokens are stored in the iOS Keychain / Android Keystore via `expo-secure-store`
 (chunked, since sessions can exceed 2 KB) and in `localStorage` on web.
+
+## Distribution for $0 (no store fees)
+
+### Android: installable `.apk` via EAS (free tier)
+
+```bash
+npx eas-cli@latest login
+npx eas-cli@latest init                      # first time only: creates the EAS project (commit the projectId it adds)
+# Cloud builds can't see .env.local, so store the public Supabase values on EAS once:
+npx eas-cli@latest env:set --name EXPO_PUBLIC_SUPABASE_URL --value https://<project-ref>.supabase.co --environment preview --visibility plaintext
+npx eas-cli@latest env:set --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value <anon key> --environment preview --visibility plaintext
+npx eas-cli@latest build -p android --profile preview
+```
+
+The `preview` profile in [`eas.json`](eas.json) builds an `.apk` (`android.buildType: "apk"`). Open the
+build link on your phone, download and install it (allow installs from your browser when asked).
+Free-tier builds wait in a shared queue and have a monthly limit.
+
+### Web / PWA on Vercel (free)
+
+```bash
+npm run build:web      # expo export -p web + copies app-store/{privacy,terms,support}.html into dist/
+npm run serve:web      # preview the production build locally
+```
+
+1. Import the GitHub repo at [vercel.com/new](https://vercel.com/new). [`vercel.json`](vercel.json)
+   already sets the build command, the `dist` output and security / caching headers.
+2. In Vercel → Project → Settings → Environment Variables, add `EXPO_PUBLIC_SUPABASE_URL` and
+   `EXPO_PUBLIC_SUPABASE_ANON_KEY`, then deploy.
+3. Add the Vercel domain to Supabase → Authentication → URL Configuration.
+4. Install it on a phone: **iPhone** Safari → Share → *Add to Home Screen*; **Android** Chrome → ⋮ →
+   *Install app*. It runs full-screen and works offline (service worker in [`public/sw.js`](public/sw.js),
+   manifest in [`public/manifest.json`](public/manifest.json), wired up in [`src/app/+html.tsx`](src/app/+html.tsx)).
+
+The site also serves the legal pages at `/privacy`, `/terms` and `/support`.
+
+### Icons and store metadata
+
+- App, adaptive, splash and PWA icons are rendered from the SVG sources in [`assets/brand`](assets/brand)
+  (the app's own oak art). The 1024 × 1024 `assets/images/icon.png` is opaque, with no alpha channel, as
+  the App Store requires.
+- [`app-store/`](app-store) holds the store listing text, privacy answers and a pre-publication checklist
+  ([`listing.md`](app-store/listing.md)) plus [`privacy.html`](app-store/privacy.html),
+  [`terms.html`](app-store/terms.html) and [`support.html`](app-store/support.html), ready for a future
+  App Store / Google Play submission.
 
 ## Architecture
 
@@ -117,7 +164,8 @@ and species to the account. Signing out clears the device copy; the data stays i
 
 ## Testing & quality
 
-- `npm test`: 73 unit tests covering the timer engine, stats, streaks/levels and sync merge rules.
+- `npm test`: 79 unit tests covering the timer engine, stats, streaks/levels, sync merge rules and the
+  coin guard (including a check that the app's species prices match the database trigger).
 - `npm run typecheck` and `npm run lint` must pass with zero errors.
 - Visual checks: the screens were compared side-by-side with the mockups in `design/mockups` using
   headless Chrome screenshots at 390 × 784.
@@ -126,4 +174,6 @@ and species to the account. Signing out clears the device copy; the data stays i
 
 - `ios/` and `android/` are generated (Continuous Native Generation); configure native behaviour in
   `app.json`. Native modules beyond Expo Go need a development build (`eas build --profile development`).
-- Replace the placeholder bundle identifier `com.example.pomodoroapp` in `app.json` before publishing.
+- App identifiers: iOS bundle ID and Android package `com.asametduran.pomodoroforest`, version `1.0.0`
+  (build numbers managed remotely by EAS). The app only plays sounds, so the microphone permission is
+  disabled in the `expo-audio` plugin config.

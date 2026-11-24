@@ -36,6 +36,9 @@ yarn-error.*
 .env*.local
 !.env.example
 
+# Vercel CLI project link
+.vercel/
+
 # Supabase CLI state
 supabase/.temp/
 supabase/.branches/

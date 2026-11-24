@@ -6,6 +6,8 @@ import { create } from 'zustand';
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
+  clampProfileToEarned,
+  earnedCoins,
   fromProfileRow,
   fromSessionRow,
   mergeProfile,
@@ -101,15 +103,23 @@ async function runSync(userId: string): Promise<void> {
     if (error) throw error;
   }
 
-  const { profile, upload: uploadProfile } = mergeProfile({
+  const remoteProfile = profileRes.data ? fromProfileRow(profileRes.data) : null;
+  const merged = mergeProfile({
     local: profileOf(app),
-    remote: profileRes.data ? fromProfileRow(profileRes.data) : null,
+    remote: remoteProfile,
     firstSyncForUser,
     localDirty: app.profileDirty,
   });
-  if (uploadProfile) {
+  let profile = merged.profile;
+  if (merged.upload) {
+    // Never send more coins than the cloud sessions earned (the database coin guard would reject it).
+    profile = clampProfileToEarned(profile, earnedCoins([...remoteSessions, ...upload]));
     const { error } = await supabase.from('pomodoro_profiles').upsert(toProfileRow(profile, userId), { onConflict: 'user_id' });
-    if (error) throw error;
+    if (error) {
+      // Rejected by the coin guard (e.g. another device changed the balance meanwhile): take the cloud copy.
+      if (error.code === '23514' && remoteProfile) profile = remoteProfile;
+      else throw error;
+    }
   }
 
   // Re-read in case the user changed something while the requests were in flight: those edits

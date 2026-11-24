@@ -1,11 +1,15 @@
 import { DEFAULT_SETTINGS } from '../engine';
+import { SPECIES } from '../species';
 import {
+  clampProfileToEarned,
+  earnedCoins,
   fromProfileRow,
   fromSessionRow,
   isSyncableSession,
   mergeProfile,
   mergeSessions,
   sessionsToUpload,
+  speciesCost,
   toProfileRow,
   toSessionRow,
   type ProfileFields,
@@ -62,6 +66,59 @@ describe('session rows', () => {
     expect(isSyncableSession(session(A, { plannedSeconds: 30, actualSeconds: 30 }))).toBe(false);
     expect(isSyncableSession(session(A, { status: 'withered', coinsEarned: 5 }))).toBe(false);
     expect(isSyncableSession(session(A, { speciesId: 'palm' }))).toBe(false);
+  });
+
+  it('rejects sessions whose earnings do not match their duration (database CHECKs)', () => {
+    expect(isSyncableSession(session(A, { coinsEarned: 180 }))).toBe(false);
+    expect(isSyncableSession(session(A, { actualSeconds: 1400 }))).toBe(false);
+    expect(isSyncableSession(session(A, { endedAt: T + 60_000 }))).toBe(false);
+    expect(
+      isSyncableSession(session(A, { status: 'withered', actualSeconds: 600, coinsEarned: 0, endedAt: T + 600_000 })),
+    ).toBe(true);
+  });
+});
+
+describe('coin guard mirror', () => {
+  it('prices unlocked species and sums earned coins', () => {
+    expect(speciesCost(['oak', 'pine', 'maple', 'pine'])).toBe(180);
+    expect(earnedCoins([session(A), session(B, { status: 'withered', coinsEarned: 0, actualSeconds: 10 })])).toBe(25);
+  });
+
+  it('leaves a valid profile untouched', () => {
+    const p = profile({ coins: 20, unlockedSpecies: ['oak', 'pine'] });
+    expect(clampProfileToEarned(p, 50)).toBe(p);
+  });
+
+  it('caps coins at what was earned minus what was spent', () => {
+    expect(clampProfileToEarned(profile({ coins: 500, unlockedSpecies: ['oak', 'pine'] }), 100).coins).toBe(70);
+  });
+
+  it('drops unaffordable species, most expensive first, and keeps the selection valid', () => {
+    const result = clampProfileToEarned(
+      profile({ coins: 0, unlockedSpecies: ['oak', 'pine', 'maple'], selectedSpecies: 'maple' }),
+      40,
+    );
+    expect(result.unlockedSpecies).toEqual(['oak', 'pine']);
+    expect(result.selectedSpecies).toBe('oak');
+    expect(result.coins).toBe(0);
+  });
+
+  it('uses the same species prices as the database trigger', () => {
+    // The app has no Node typings (it is React Native code), so type the two fs calls used here.
+    const fs = jest.requireActual<{
+      readdirSync(dir: string): string[];
+      readFileSync(file: string, encoding: 'utf8'): string;
+    }>('fs');
+    const testPath = expect.getState().testPath ?? '';
+    const dir = `${testPath.replace(/[\\/]src[\\/]lib[\\/]__tests__[\\/][^\\/]+$/, '')}/supabase/migrations`;
+    const file = fs.readdirSync(dir).find((f) => f.endsWith('_pomodoro_guard_coins.sql'));
+    expect(file).toBeDefined();
+    const sql = fs.readFileSync(`${dir}/${file}`, 'utf8');
+    const prices = Object.fromEntries(
+      [...sql.matchAll(/'(\w+)' = any\(new\.unlocked_species\) then (\d+)/g)].map((m) => [m[1], Number(m[2])]),
+    );
+    const expected = Object.fromEntries(SPECIES.filter((s) => s.cost > 0).map((s) => [s.id, s.cost]));
+    expect(prices).toEqual(expected);
   });
 });
 

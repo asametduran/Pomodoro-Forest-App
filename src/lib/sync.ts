@@ -9,6 +9,7 @@ import { TAGS, type Session, type Settings, type TagId } from './types';
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const SPECIES_IDS = new Set(SPECIES.map((s) => s.id));
+const SPECIES_PRICES = new Map(SPECIES.map((s) => [s.id, s.cost]));
 const TAG_IDS = new Set<string>(TAGS.map((t) => t.id));
 
 export interface SessionRow {
@@ -45,7 +46,7 @@ export interface ProfileFields {
   settings: Settings;
 }
 
-/** Only well-formed sessions are uploaded (the database enforces the same rules). */
+/** Only well-formed sessions are uploaded; this mirrors every CHECK constraint in the database. */
 export function isSyncableSession(s: Session): boolean {
   return (
     UUID_RE.test(s.id) &&
@@ -54,10 +55,45 @@ export function isSyncableSession(s: Session): boolean {
     s.actualSeconds >= 0 &&
     s.actualSeconds <= s.plannedSeconds &&
     s.endedAt >= s.startedAt &&
+    (s.endedAt - s.startedAt) / 1000 + 1 >= s.actualSeconds &&
     SPECIES_IDS.has(s.speciesId) &&
     TAG_IDS.has(s.tag) &&
-    (s.status === 'completed' || s.coinsEarned === 0)
+    (s.status === 'completed'
+      ? s.actualSeconds === s.plannedSeconds && s.coinsEarned === Math.floor(s.plannedSeconds / 60)
+      : s.coinsEarned === 0)
   );
+}
+
+/** Coins spent unlocking these species (mirrors the pomodoro_guard_coins database trigger). */
+export function speciesCost(unlocked: readonly string[]): number {
+  return [...new Set(unlocked)].reduce((sum, id) => sum + (SPECIES_PRICES.get(id) ?? 0), 0);
+}
+
+/** Coins earned by completed sessions. */
+export function earnedCoins(sessions: readonly Session[]): number {
+  return sessions.reduce((sum, s) => sum + (s.status === 'completed' ? s.coinsEarned : 0), 0);
+}
+
+/**
+ * Keep a profile within what the database accepts: coins + cost(unlocked species) <= earned.
+ * Normal play always satisfies this; it only trims inconsistent local data so sync can't get stuck.
+ */
+export function clampProfileToEarned(p: ProfileFields, earned: number): ProfileFields {
+  let unlocked = [...new Set(p.unlockedSpecies)];
+  const byPrice = [...unlocked].sort((a, b) => (SPECIES_PRICES.get(b) ?? 0) - (SPECIES_PRICES.get(a) ?? 0));
+  for (const id of byPrice) {
+    if (speciesCost(unlocked) <= earned) break;
+    if ((SPECIES_PRICES.get(id) ?? 0) > 0) unlocked = unlocked.filter((x) => x !== id);
+  }
+  if (!unlocked.length) unlocked = ['oak'];
+  const coins = Math.max(0, Math.min(p.coins, earned - speciesCost(unlocked)));
+  if (coins === p.coins && unlocked.length === p.unlockedSpecies.length) return p;
+  return {
+    ...p,
+    coins,
+    unlockedSpecies: unlocked,
+    selectedSpecies: unlocked.includes(p.selectedSpecies) ? p.selectedSpecies : unlocked[0],
+  };
 }
 
 export function toSessionRow(s: Session, userId: string): SessionRow {
