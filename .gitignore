@@ -30,11 +30,18 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files (only the empty template is committed)
-.env
-.env.*
-.env*.local
+# env files can hold secrets (any folder, including supabase/functions/.env); only the
+# template is committed
+.env*
 !.env.example
+
+# local databases (SQLite files and their journals)
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 
 # Vercel CLI project link
 .vercel/
@@ -43,9 +50,16 @@ yarn-error.*
 supabase/.temp/
 supabase/.branches/
 
-# design/screenshot scratch output
+# design/screenshot scratch output and temporary files
 scratchpad/
 shots/
+/tmp/
+/temp/
+*.tmp
+*.log
+
+# Claude Code per-user settings (the shared .claude/settings.json stays tracked)
+.claude/settings.local.json
 
 # typescript
 *.tsbuildinfo
